@@ -11,6 +11,22 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vera
+          POSTGRES_USER: vera
+          POSTGRES_PASSWORD: vera
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vera -d vera"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      VERA_DATABASE_URL: postgresql+asyncpg://vera:vera@localhost:5432/vera
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -28,6 +44,10 @@ jobs:
         run: uv run mypy src
       - name: Test
         run: uv run pytest
+      - name: Verify migrations and schema metadata
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
       - name: Build package
         run: uv build
       - name: Build container

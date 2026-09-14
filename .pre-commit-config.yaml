@@ -5,13 +5,10 @@ repos:
       - id: ruff-check
         args: [--fix]
       - id: ruff-format
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.20.2
+  - repo: local
     hooks:
       - id: mypy
-        args: [src]
+        name: mypy
+        entry: uv run mypy src
+        language: system
         pass_filenames: false
-        additional_dependencies:
-          - pydantic>=2.11,<3
-          - pydantic-settings>=2.10,<3
-          - sqlalchemy[asyncio]>=2.0.41,<3
