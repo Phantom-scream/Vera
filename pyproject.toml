@@ -1,0 +1,72 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vera"
+version = "0.1.0"
+description = "CI-native automated test reporting and regression intelligence foundation"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+license = { text = "Proprietary" }
+authors = [{ name = "Vera contributors" }]
+dependencies = [
+  "alembic>=1.16,<2",
+  "asyncpg>=0.30,<1",
+  "fastapi>=0.116,<1",
+  "httpx>=0.28,<1",
+  "pydantic>=2.11,<3",
+  "pydantic-settings>=2.10,<3",
+  "sqlalchemy[asyncio]>=2.0.41,<3",
+  "typer>=0.16,<1",
+  "uvicorn[standard]>=0.35,<1",
+]
+
+[project.scripts]
+vera = "vera.cli.app:app"
+
+[dependency-groups]
+dev = [
+  "mypy>=1.17,<2",
+  "pre-commit>=4.2,<5",
+  "pytest>=8.4,<9",
+  "pytest-asyncio>=1.1,<2",
+  "pytest-cov>=6.2,<7",
+  "ruff>=0.12,<1",
+  "testcontainers[postgres]>=4.12,<5",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vera"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers --cov=vera --cov-report=term-missing"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = ["integration: requires a running Docker daemon"]
+
+[tool.coverage.run]
+branch = true
+source = ["vera"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC", "RUF"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["vera"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["vera"]
+mypy_path = "src"
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["testcontainers.*"]
+ignore_missing_imports = true
