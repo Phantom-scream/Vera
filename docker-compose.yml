@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-vera}
+      POSTGRES_USER: ${POSTGRES_USER:-vera}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vera}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  vera:
+    build:
+      context: .
+    environment:
+      VERA_ENVIRONMENT: ${VERA_ENVIRONMENT:-development}
+      VERA_LOG_LEVEL: ${VERA_LOG_LEVEL:-INFO}
+      VERA_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vera}:${POSTGRES_PASSWORD:-vera}@postgres:5432/${POSTGRES_DB:-vera}
+      VERA_API_HOST: 0.0.0.0
+      VERA_API_PORT: 8000
+      VERA_APP_NAME: ${VERA_APP_NAME:-Vera}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${VERA_HOST_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  postgres-data:
