@@ -1,45 +1,46 @@
 # Vera architecture
 
-## Current Phase 0 foundation
+## Current Phase 1 implementation
 
 Vera begins as a modular monolith: one Python package and one deployable API process, divided
 by responsibilities that are expected to change for different reasons.
 
 - `cli` and `api` are delivery mechanisms. They validate input and delegate work rather than
   owning business rules.
-- `application` is reserved for explicit use-case orchestration as ingestion and analysis are
-  introduced.
+- `application` contains `TestRunIngestionService`, which selects the parser, calculates
+  aggregates, and coordinates atomic/idempotent persistence.
 - `domain` contains typed, provider-neutral concepts and errors. It imports no web framework,
   database, or vendor SDK.
-- `parsers`, `providers`, and `publishers` define small ports at external-system boundaries.
-  Concrete adapters will be added only alongside real use cases.
+- `parsers` defines a parser port and a safe JUnit XML adapter. `providers` and `publishers`
+  remain ports for future external integrations.
 - `persistence` owns SQLAlchemy metadata, engines, and session lifecycle. Persistence models
   remain separate from API schemas and domain models where their constraints differ.
 - `config` loads typed environment settings. `observability` currently supplies structured
   standard-library logging and is a natural integration point for later OpenTelemetry setup.
 
-The API exposes `/api/v1/health`, and the CLI exposes version and local health commands.
-PostgreSQL connectivity and Alembic metadata wiring are present, but no business schema or
-repository implementation has been invented before its use cases are known.
+The API exposes health, ingestion, retrieval, and paginated listing routes. The CLI exposes
+version, health, and ingestion commands. PostgreSQL stores normalized run aggregates through a
+schema protected by foreign keys, uniqueness rules, and consistency checks.
 
 ## Planned data flow
 
 1. Automated tests run in GitHub Actions or GitLab CI and write JUnit XML, JSON, or another
    supported report.
 2. A subsequent pipeline job invokes the Vera CLI.
-3. A parser adapter normalizes the report into domain data.
-4. In team mode, the CLI submits normalized execution data and relevant raw information to the
-   Vera API.
-5. Application services validate and coordinate persistence of execution history in
+3. The JUnit parser adapter normalizes the report into domain data.
+4. The CLI can persist directly, while clients can upload a report and metadata to the Vera
+   API.
+5. The ingestion service calculates aggregates and atomically persists execution history in
    PostgreSQL. Raw artifacts are planned for future S3-compatible storage.
 6. Analysis services compare history to identify regressions, flaky behavior, duration
    anomalies, and release readiness.
 7. Publisher adapters send derived reports to selected systems such as Jira, Xray, Notion,
    Slack, GitHub, or GitLab.
 
-Steps 3 through 7 describe the intended evolution, not currently shipped product behavior.
-The port boundaries prevent vendor concerns from entering the domain and allow asynchronous
-network I/O where it improves throughput without forcing the whole domain to be asynchronous.
+Steps 3 through 5 are implemented for compatible JUnit XML. Analysis and publishing in steps 6
+and 7 remain future work. The port boundaries prevent vendor concerns from entering the domain
+and allow asynchronous network I/O where it improves throughput without forcing the whole
+domain to be asynchronous.
 
 ## Operational decisions
 
