@@ -4,10 +4,11 @@ Vera is a CI-native automated test reporting and regression intelligence platfor
 intended to run after regression jobs, normalize their results, retain execution history,
 analyze changes, and publish useful reports to engineering tools.
 
-Phase 1 provides Vera's first product capability: safe JUnit XML normalization and atomic,
-idempotent persistence of test runs, suites, cases, failures, pipeline metadata, and execution
-environment context. Regression comparison, flaky-test analysis, artifact storage, and
-external integrations remain planned work.
+Phase 2 makes JUnit ingestion CI-aware. Vera detects GitHub Actions and GitLab CI from
+authoritative environment markers, normalizes execution and source-control context, and stores
+it with the test run. Provider tokens are optional and are used only for best-effort metadata
+enrichment. Regression comparison, flaky-test analysis, artifact storage, and publishers remain
+planned work.
 
 ## Prerequisites
 
@@ -46,6 +47,19 @@ uv run vera ingest reports/junit.xml \
 The command reports the persisted run ID and aggregates. Repeating the same CI identity returns
 the existing run without inserting a duplicate.
 
+Inside GitHub Actions or GitLab CI, the normal identity flags are detected automatically:
+
+```bash
+uv run vera context
+uv run vera context --json
+uv run vera ingest reports/junit.xml --environment staging
+```
+
+Explicit metadata flags remain available for local execution and override detected values when
+provided. Use `--ci-provider github`, `--ci-provider gitlab`, or `--ci-provider local` to override
+detection for diagnostics. See [docs/ci-providers.md](docs/ci-providers.md) for precedence,
+identity, retry, security, and optional enrichment details.
+
 Run the API during development:
 
 ```bash
@@ -82,7 +96,8 @@ docker compose exec -T vera vera ingest /tmp/junit.xml \
   --pipeline-id 1201 --job-id 8891 --environment staging
 ```
 
-The upload API accepts the same metadata as multipart form fields:
+The provider-neutral upload API accepts normalized metadata as multipart form fields. The API
+does not inspect the server process's own CI environment on behalf of a remote caller:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/test-runs/ingest \
@@ -101,8 +116,9 @@ supported JUnit subset and complete examples.
 ## Database migrations
 
 Alembic reads `VERA_DATABASE_URL` through Vera's settings and uses the shared SQLAlchemy
-metadata. The initial schema is normalized across runs, suites, cases, failures, and
-environment contexts.
+metadata. The schema is normalized across runs, suites, cases, failures, and environment
+contexts. CI and Git context fields live on `test_runs` because they are one-to-one and central
+to history queries.
 
 ```bash
 uv run alembic upgrade head
