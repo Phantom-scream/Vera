@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="unit" package="vera.tests" tests="99" failures="12" time="9.9" timestamp="2026-09-14T08:00:00Z">
+  <testcase name="test_health" classname="tests.test_api" file="tests/test_api.py" time="0.125" />
+</testsuite>

@@ -7,9 +7,13 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from vera.config import get_settings
 from vera.persistence import Base
+from vera.persistence import models as persistence_models
+
+_ = persistence_models
 
 config = context.config
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+if config.get_main_option("sqlalchemy.url") == "postgresql+asyncpg://vera:vera@localhost:5432/vera":
+    config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://vera:vera@localhost:5432/vera"
     api_host: str = "127.0.0.1"
     api_port: int = Field(default=8000, ge=1, le=65535)
+    max_report_size_bytes: int = Field(default=10 * 1024 * 1024, ge=1)
 
 
 @lru_cache

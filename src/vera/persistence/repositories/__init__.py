@@ -1,1 +1,5 @@
-"""Persistence implementations will live here when use cases require them."""
+"""Persistence operations supporting application use cases."""
+
+from vera.persistence.repositories.test_runs import TestRunRepository
+
+__all__ = ["TestRunRepository"]

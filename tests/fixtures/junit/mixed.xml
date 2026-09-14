@@ -1,0 +1,10 @@
+<testsuite name="mixed" tests="3" failures="1" skipped="1" time="5">
+  <testcase name="passes" classname="tests.Mixed" time="0.1" />
+  <testcase name="fails" classname="tests.Mixed" time="0.2">
+    <failure type="AssertionError" message="expected true">Traceback line 1
+Traceback line 2</failure>
+  </testcase>
+  <testcase name="skips" classname="tests.Mixed">
+    <skipped message="not supported" />
+  </testcase>
+</testsuite>

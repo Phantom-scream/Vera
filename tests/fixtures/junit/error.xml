@@ -1,0 +1,6 @@
+<testsuite name="errors">
+  <testcase name="cannot_start" classname="tests.Runtime" time="0.05">
+    <error type="RuntimeError" message="fixture failed">setup failed
+  at tests/runtime.py:12</error>
+  </testcase>
+</testsuite>

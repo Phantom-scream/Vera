@@ -1,0 +1,8 @@
+<testsuites name="all" tests="2">
+  <testsuite name="unit" package="tests.unit">
+    <testcase name="first" time="0.1" />
+  </testsuite>
+  <testsuite name="integration" package="tests.integration">
+    <testcase name="second" time="0.2" />
+  </testsuite>
+</testsuites>
