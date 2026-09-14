@@ -1,18 +1,14 @@
-from dataclasses import dataclass
+from collections.abc import Mapping
 from typing import Protocol
 
-
-@dataclass(frozen=True, slots=True)
-class ArtifactReference:
-    """Provider-neutral address of a CI artifact."""
-
-    pipeline_id: str
-    artifact_path: str
+from vera.domain.models import DetectedCIContext
 
 
 class CIProvider(Protocol):
-    """Retrieve test artifacts from a CI system."""
+    """Translate one provider's environment into Vera's normalized context."""
 
-    async def fetch_artifact(self, reference: ArtifactReference) -> bytes:
-        """Fetch an artifact without exposing provider details to the domain."""
+    name: str
+
+    def read_context(self, environment: Mapping[str, str]) -> DetectedCIContext:
+        """Validate and normalize authoritative CI environment variables."""
         ...

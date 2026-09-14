@@ -1,0 +1,9 @@
+{
+  "number": 23,
+  "pull_request": {
+    "title": "Persist normalized CI context",
+    "html_url": "https://github.com/acme/backend/pull/23",
+    "head": {"ref": "feature/ci-context"},
+    "base": {"ref": "main"}
+  }
+}

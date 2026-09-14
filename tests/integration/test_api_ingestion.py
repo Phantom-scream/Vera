@@ -27,6 +27,19 @@ async def test_api_ingests_retrieves_lists_and_deduplicates(
         "job_id": "22",
         "branch": "main",
         "commit_sha": "deadbeef",
+        "repository_url": "https://github.com/acme/api",
+        "pipeline_name": "Regression",
+        "pipeline_url": "https://github.com/acme/api/actions/runs/901",
+        "job_name": "tests",
+        "run_number": "12",
+        "run_attempt": "2",
+        "trigger_source": "pull_request",
+        "actor": "octocat",
+        "git_ref": "refs/pull/8/merge",
+        "default_branch": "main",
+        "change_request_kind": "pull_request",
+        "change_request_number": "8",
+        "change_request_title": "Improve tests",
         "environment": "ci",
         "test_configuration": '{"workers": 4}',
     }
@@ -49,6 +62,10 @@ async def test_api_ingests_retrieves_lists_and_deduplicates(
     assert duplicate.json()["created"] is False
     assert duplicate.json()["test_run"]["id"] == run_id
     assert retrieved.status_code == 200
+    assert retrieved.json()["ci_context"]["run_attempt"] == 2
+    assert retrieved.json()["ci_context"]["pipeline_name"] == "Regression"
+    assert retrieved.json()["git_context"]["ref"] == "refs/pull/8/merge"
+    assert retrieved.json()["change_request"]["number_or_iid"] == "8"
     assert retrieved.json()["suites"][0]["test_cases"][1]["failure"]["message"] == "expected true"
     assert page.status_code == 200
     assert page.json()["total"] == 1

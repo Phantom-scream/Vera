@@ -11,8 +11,9 @@ from vera import __version__
 from vera.application.services import IngestionResult, TestRunIngestionService
 from vera.config import get_settings
 from vera.domain.exceptions import ReportTooLargeError, VeraError
-from vera.domain.models import EnvironmentContext, PipelineContext
+from vera.domain.models import DetectedCIContext, EnvironmentContext, PipelineContext
 from vera.persistence import Database
+from vera.providers import CIProviderDetector, enrich_ci_context, resolve_pipeline_context
 
 app = typer.Typer(
     name="vera",
@@ -50,15 +51,49 @@ def health() -> None:
 
 
 @app.command()
+def context(
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+    ci_provider: str | None = typer.Option(None, help="Override CI detection."),
+) -> None:
+    """Show normalized CI metadata without displaying credentials."""
+
+    try:
+        settings = get_settings()
+        detected = CIProviderDetector().detect(
+            override=ci_provider or settings.ci_provider_override
+        )
+    except (ValidationError, VeraError) as exc:
+        typer.echo(f"CI context failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    if json_output:
+        payload = (
+            {"mode": "local", "context": None}
+            if detected is None
+            else {"mode": detected.ci.provider, "context": detected.model_dump(mode="json")}
+        )
+        typer.echo(json.dumps(payload, sort_keys=True))
+    elif detected is None:
+        typer.echo("CI context: local/manual mode (no supported CI provider detected)")
+    else:
+        ci = detected.ci
+        typer.echo(
+            f"CI context: {ci.provider} repository={ci.repository} "
+            f"pipeline={ci.pipeline_id} job={ci.job_id} attempt={ci.run_attempt}"
+        )
+
+
+@app.command()
 def ingest(
     report: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
-    provider: str = typer.Option(..., help="CI provider name."),
-    repository: str = typer.Option(..., help="Provider repository identifier."),
-    pipeline_id: str = typer.Option(..., help="CI pipeline identifier."),
-    job_id: str = typer.Option(..., help="CI job identifier."),
+    provider: str | None = typer.Option(None, help="Explicit CI provider name."),
+    repository: str | None = typer.Option(None, help="Explicit repository identifier."),
+    pipeline_id: str | None = typer.Option(None, help="Explicit pipeline identifier."),
+    job_id: str | None = typer.Option(None, help="Explicit job identifier."),
+    ci_provider: str | None = typer.Option(None, help="Override automatic CI detection."),
     external_run_id: str | None = typer.Option(None, help="Optional report execution ID."),
     branch: str | None = typer.Option(None),
     commit_sha: str | None = typer.Option(None),
+    run_attempt: int | None = typer.Option(None, min=1),
     environment: str | None = typer.Option(None),
     application_version: str | None = typer.Option(None),
     build_number: str | None = typer.Option(None),
@@ -72,19 +107,24 @@ def ingest(
     try:
         settings = get_settings()
         content = _read_report_file(report, settings.max_report_size_bytes)
+        detected = CIProviderDetector().detect(
+            override=ci_provider or settings.ci_provider_override
+        )
         result = asyncio.run(
-            _ingest(
+            _prepare_and_ingest(
                 content=content,
                 report_format=report_format,
-                pipeline=PipelineContext(
-                    external_run_id=external_run_id,
-                    provider=provider,
-                    repository=repository,
-                    branch=branch,
-                    commit_sha=commit_sha,
-                    pipeline_id=pipeline_id,
-                    job_id=job_id,
-                ),
+                detected=detected,
+                external_run_id=external_run_id,
+                explicit_pipeline={
+                    "provider": provider,
+                    "repository": repository,
+                    "branch": branch,
+                    "commit_sha": commit_sha,
+                    "pipeline_id": pipeline_id,
+                    "job_id": job_id,
+                    "run_attempt": run_attempt,
+                },
                 environment=EnvironmentContext(
                     environment=environment,
                     application_version=application_version,
@@ -105,6 +145,32 @@ def ingest(
         f"{action} test run {run.id}: {run.total_tests} tests, "
         f"{run.passed_tests} passed, {run.failed_tests} failed, "
         f"{run.skipped_tests} skipped"
+    )
+
+
+async def _prepare_and_ingest(
+    *,
+    content: bytes,
+    report_format: str,
+    detected: DetectedCIContext | None,
+    external_run_id: str | None,
+    explicit_pipeline: dict[str, object],
+    environment: EnvironmentContext,
+) -> IngestionResult:
+    settings = get_settings()
+    normalized = detected
+    if normalized is not None:
+        normalized = await enrich_ci_context(normalized, settings)
+    pipeline = resolve_pipeline_context(
+        normalized,
+        external_run_id=external_run_id,
+        **explicit_pipeline,
+    )
+    return await _ingest(
+        content=content,
+        report_format=report_format,
+        pipeline=pipeline,
+        environment=environment,
     )
 
 

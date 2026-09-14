@@ -8,7 +8,11 @@ from sqlalchemy.orm import selectinload
 
 from vera.domain.enums import ExecutionStatus
 from vera.domain.models import (
+    ChangeRequestContext,
+    ChangeRequestKind,
+    CIContext,
     EnvironmentContext,
+    GitContext,
     PipelineContext,
     TestCaseExecution,
     TestFailure,
@@ -39,6 +43,7 @@ class TestRunRepository:
             TestRunRecord.pipeline_id == pipeline.pipeline_id,
             TestRunRecord.job_id == pipeline.job_id,
             TestRunRecord.external_run_id == pipeline.resolved_external_run_id(),
+            TestRunRecord.run_attempt == pipeline.run_attempt,
         )
         record = (await self._session.scalars(statement)).one_or_none()
         return _to_domain(record) if record is not None else None
@@ -92,6 +97,30 @@ def _to_record(run: TestRun) -> TestRunRecord:
         commit_sha=run.commit_sha,
         pipeline_id=run.pipeline_id,
         job_id=run.job_id,
+        repository_url=run.ci_context.repository_url,
+        pipeline_name=run.ci_context.pipeline_name,
+        pipeline_url=run.ci_context.pipeline_url,
+        job_name=run.ci_context.job_name,
+        job_url=run.ci_context.job_url,
+        run_number=run.ci_context.run_number,
+        run_attempt=run.ci_context.run_attempt,
+        trigger_source=run.ci_context.trigger_source,
+        actor=run.ci_context.actor,
+        detected_from_ci=run.ci_context.detected_from_ci,
+        git_ref=run.git_context.ref,
+        default_branch=run.git_context.default_branch,
+        commit_message=run.git_context.commit_message,
+        commit_author=run.git_context.commit_author,
+        change_request_kind=run.change_request.kind.value if run.change_request else None,
+        change_request_number=run.change_request.number_or_iid if run.change_request else None,
+        change_request_title=run.change_request.title if run.change_request else None,
+        change_request_source_branch=(
+            run.change_request.source_branch if run.change_request else None
+        ),
+        change_request_target_branch=(
+            run.change_request.target_branch if run.change_request else None
+        ),
+        change_request_url=run.change_request.url if run.change_request else None,
         started_at=run.started_at,
         finished_at=run.finished_at,
         duration_seconds=run.duration_seconds,
@@ -161,6 +190,42 @@ def _to_domain(record: TestRunRecord) -> TestRun:
         commit_sha=record.commit_sha,
         pipeline_id=record.pipeline_id,
         job_id=record.job_id,
+        ci_context=CIContext(
+            provider=record.provider,
+            repository=record.repository,
+            repository_url=record.repository_url,
+            pipeline_id=record.pipeline_id,
+            pipeline_name=record.pipeline_name,
+            pipeline_url=record.pipeline_url,
+            job_id=record.job_id,
+            job_name=record.job_name,
+            job_url=record.job_url,
+            run_number=record.run_number,
+            run_attempt=record.run_attempt,
+            trigger_source=record.trigger_source,
+            actor=record.actor,
+            detected_from_ci=record.detected_from_ci,
+        ),
+        git_context=GitContext(
+            commit_sha=record.commit_sha,
+            branch=record.branch,
+            ref=record.git_ref,
+            default_branch=record.default_branch,
+            commit_message=record.commit_message,
+            commit_author=record.commit_author,
+        ),
+        change_request=(
+            ChangeRequestContext(
+                kind=ChangeRequestKind(record.change_request_kind),
+                number_or_iid=record.change_request_number,
+                title=record.change_request_title,
+                source_branch=record.change_request_source_branch,
+                target_branch=record.change_request_target_branch,
+                url=record.change_request_url,
+            )
+            if record.change_request_kind and record.change_request_number
+            else None
+        ),
         started_at=record.started_at,
         finished_at=record.finished_at,
         duration_seconds=record.duration_seconds,

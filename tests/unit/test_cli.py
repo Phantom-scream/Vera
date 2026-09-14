@@ -5,6 +5,7 @@ from typer.testing import CliRunner
 
 from vera import __version__
 from vera.cli.app import app
+from vera.config import get_settings
 
 runner = CliRunner()
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "junit"
@@ -22,6 +23,38 @@ def test_health_command() -> None:
 
     assert result.exit_code == 0
     assert json.loads(result.stdout) == {"status": "ok", "version": __version__}
+
+
+def test_context_command_emits_normalized_json_without_tokens() -> None:
+    get_settings.cache_clear()
+    result = runner.invoke(
+        app,
+        ["context", "--json"],
+        env={
+            "GITHUB_ACTIONS": "true",
+            "GITHUB_REPOSITORY": "acme/api",
+            "GITHUB_RUN_ID": "9001",
+            "GITHUB_JOB": "tests",
+            "GITHUB_RUN_ATTEMPT": "3",
+            "GITHUB_TOKEN": "top-secret-token",
+        },
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["mode"] == "github"
+    assert payload["context"]["ci"]["run_attempt"] == 3
+    assert "top-secret-token" not in result.stdout
+    get_settings.cache_clear()
+
+
+def test_context_command_reports_local_mode() -> None:
+    get_settings.cache_clear()
+    result = runner.invoke(app, ["context", "--json"], env={"VERA_CI_PROVIDER_OVERRIDE": "local"})
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {"context": None, "mode": "local"}
+    get_settings.cache_clear()
 
 
 def test_ingest_returns_nonzero_for_malformed_xml() -> None:

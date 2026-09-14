@@ -4,15 +4,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Self
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from vera.domain.enums import ExecutionStatus
-
-
-class DomainModel(BaseModel):
-    """Immutable base for validated domain values."""
-
-    model_config = ConfigDict(frozen=True)
+from vera.domain.models.base import DomainModel
+from vera.domain.models.ci import ChangeRequestContext, CIContext, GitContext
 
 
 class TestFailure(DomainModel):
@@ -92,6 +88,21 @@ class PipelineContext(DomainModel):
     commit_sha: str | None = Field(default=None, max_length=128)
     pipeline_id: str = Field(min_length=1, max_length=255)
     job_id: str = Field(min_length=1, max_length=255)
+    repository_url: str | None = Field(default=None, max_length=2000)
+    pipeline_name: str | None = Field(default=None, max_length=500)
+    pipeline_url: str | None = Field(default=None, max_length=2000)
+    job_name: str | None = Field(default=None, max_length=500)
+    job_url: str | None = Field(default=None, max_length=2000)
+    run_number: int | None = Field(default=None, ge=1)
+    run_attempt: int = Field(default=1, ge=1)
+    trigger_source: str | None = Field(default=None, max_length=255)
+    actor: str | None = Field(default=None, max_length=500)
+    detected_from_ci: bool = False
+    ref: str | None = Field(default=None, max_length=1000)
+    default_branch: str | None = Field(default=None, max_length=500)
+    commit_message: str | None = Field(default=None, max_length=10000)
+    commit_author: str | None = Field(default=None, max_length=500)
+    change_request: ChangeRequestContext | None = None
 
     @field_validator("provider", mode="before")
     @classmethod
@@ -115,6 +126,38 @@ class PipelineContext(DomainModel):
         """Return an explicit run ID or a stable pipeline/job fallback."""
 
         return self.external_run_id or f"{self.pipeline_id}:{self.job_id}"
+
+    def ci_context(self) -> CIContext:
+        """Return normalized pipeline and job metadata."""
+
+        return CIContext(
+            provider=self.provider,
+            repository=self.repository,
+            repository_url=self.repository_url,
+            pipeline_id=self.pipeline_id,
+            pipeline_name=self.pipeline_name,
+            pipeline_url=self.pipeline_url,
+            job_id=self.job_id,
+            job_name=self.job_name,
+            job_url=self.job_url,
+            run_number=self.run_number,
+            run_attempt=self.run_attempt,
+            trigger_source=self.trigger_source,
+            actor=self.actor,
+            detected_from_ci=self.detected_from_ci,
+        )
+
+    def git_context(self) -> GitContext:
+        """Return normalized source revision metadata."""
+
+        return GitContext(
+            commit_sha=self.commit_sha,
+            branch=self.branch,
+            ref=self.ref,
+            default_branch=self.default_branch,
+            commit_message=self.commit_message,
+            commit_author=self.commit_author,
+        )
 
 
 class EnvironmentContext(DomainModel):
@@ -147,6 +190,9 @@ class TestRun(DomainModel):
     commit_sha: str | None = None
     pipeline_id: str
     job_id: str
+    ci_context: CIContext
+    git_context: GitContext
+    change_request: ChangeRequestContext | None = None
     started_at: datetime
     finished_at: datetime
     duration_seconds: float = Field(ge=0, allow_inf_nan=False)
@@ -194,6 +240,9 @@ class TestRun(DomainModel):
             commit_sha=pipeline.commit_sha,
             pipeline_id=pipeline.pipeline_id,
             job_id=pipeline.job_id,
+            ci_context=pipeline.ci_context(),
+            git_context=pipeline.git_context(),
+            change_request=pipeline.change_request,
             started_at=started_at,
             finished_at=started_at + timedelta(seconds=duration),
             duration_seconds=duration,

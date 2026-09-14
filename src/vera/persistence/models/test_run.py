@@ -40,16 +40,21 @@ class TestRunRecord(Base):
             "status IN ('passed', 'failed', 'skipped', 'error')",
             name="ck_test_runs_status",
         ),
+        CheckConstraint("run_attempt >= 1", name="ck_test_runs_run_attempt_positive"),
         UniqueConstraint(
             "provider",
             "repository",
             "pipeline_id",
             "job_id",
             "external_run_id",
+            "run_attempt",
             name="uq_test_runs_ingestion_identity",
         ),
         Index("ix_test_runs_repository_created_at", "repository", "created_at"),
+        Index("ix_test_runs_repository_branch_created_at", "repository", "branch", "created_at"),
+        Index("ix_test_runs_provider_repository_pipeline", "provider", "repository", "pipeline_id"),
         Index("ix_test_runs_commit_sha", "commit_sha"),
+        Index("ix_test_runs_repository_change_request", "repository", "change_request_number"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -60,6 +65,26 @@ class TestRunRecord(Base):
     commit_sha: Mapped[str | None] = mapped_column(String(128))
     pipeline_id: Mapped[str] = mapped_column(String(255))
     job_id: Mapped[str] = mapped_column(String(255))
+    repository_url: Mapped[str | None] = mapped_column(String(2000))
+    pipeline_name: Mapped[str | None] = mapped_column(String(500))
+    pipeline_url: Mapped[str | None] = mapped_column(String(2000))
+    job_name: Mapped[str | None] = mapped_column(String(500))
+    job_url: Mapped[str | None] = mapped_column(String(2000))
+    run_number: Mapped[int | None] = mapped_column(Integer)
+    run_attempt: Mapped[int] = mapped_column(Integer, default=1)
+    trigger_source: Mapped[str | None] = mapped_column(String(255))
+    actor: Mapped[str | None] = mapped_column(String(500))
+    detected_from_ci: Mapped[bool] = mapped_column(default=False)
+    git_ref: Mapped[str | None] = mapped_column(String(1000))
+    default_branch: Mapped[str | None] = mapped_column(String(500))
+    commit_message: Mapped[str | None] = mapped_column(Text)
+    commit_author: Mapped[str | None] = mapped_column(String(500))
+    change_request_kind: Mapped[str | None] = mapped_column(String(30))
+    change_request_number: Mapped[str | None] = mapped_column(String(255))
+    change_request_title: Mapped[str | None] = mapped_column(String(2000))
+    change_request_source_branch: Mapped[str | None] = mapped_column(String(500))
+    change_request_target_branch: Mapped[str | None] = mapped_column(String(500))
+    change_request_url: Mapped[str | None] = mapped_column(String(2000))
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     duration_seconds: Mapped[float] = mapped_column(Float)

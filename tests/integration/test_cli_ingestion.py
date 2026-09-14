@@ -45,3 +45,33 @@ def test_cli_ingests_and_reports_idempotent_repeat(
     assert "1 tests, 1 passed, 0 failed, 0 skipped" in first.output
     assert second.exit_code == 0, second.output
     assert "Already stored test run" in second.output
+
+
+def test_cli_auto_detects_gitlab_context(
+    migrated_database_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    variables = {
+        "VERA_DATABASE_URL": migrated_database_url,
+        "GITLAB_CI": "true",
+        "CI_PROJECT_PATH": "startup/backend",
+        "CI_PROJECT_URL": "https://gitlab.example/startup/backend",
+        "CI_PIPELINE_ID": "2201",
+        "CI_PIPELINE_IID": "32",
+        "CI_JOB_ID": "9901",
+        "CI_JOB_NAME": "regression",
+        "CI_COMMIT_SHA": "feedface",
+        "CI_COMMIT_BRANCH": "main",
+    }
+    for name, value in variables.items():
+        monkeypatch.setenv(name, value)
+    get_settings.cache_clear()
+    try:
+        result = CliRunner().invoke(
+            app,
+            ["ingest", str(FIXTURES / "simple.xml"), "--environment", "staging"],
+        )
+    finally:
+        get_settings.cache_clear()
+
+    assert result.exit_code == 0, result.output
+    assert "Stored test run" in result.output

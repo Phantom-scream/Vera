@@ -2,6 +2,26 @@ class VeraError(Exception):
     """Base class for errors safe to translate at application boundaries."""
 
 
+class CIContextError(VeraError):
+    """CI environment metadata is missing, contradictory, or invalid."""
+
+
+class ProviderApiError(VeraError):
+    """Optional provider enrichment could not be completed safely."""
+
+
+class ProviderAuthenticationError(ProviderApiError):
+    """A provider rejected the configured credentials."""
+
+
+class ProviderNotFoundError(ProviderApiError):
+    """A requested provider resource was not found."""
+
+
+class ProviderRateLimitError(ProviderApiError):
+    """A provider API rate limit prevented enrichment."""
+
+
 class InvalidReportError(VeraError):
     """Raised when an external test report cannot be safely normalized."""
 
