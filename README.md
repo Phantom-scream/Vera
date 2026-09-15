@@ -4,11 +4,11 @@ Vera is a CI-native automated test reporting and regression intelligence platfor
 intended to run after regression jobs, normalize their results, retain execution history,
 analyze changes, and publish useful reports to engineering tools.
 
-Phase 2 makes JUnit ingestion CI-aware. Vera detects GitHub Actions and GitLab CI from
-authoritative environment markers, normalizes execution and source-control context, and stores
-it with the test run. Provider tokens are optional and are used only for best-effort metadata
-enrichment. Regression comparison, flaky-test analysis, artifact storage, and publishers remain
-planned work.
+Phase 3 adds deterministic historical regression comparison to CI-aware JUnit ingestion.
+Vera selects comparable earlier runs, matches stable test identities, and persists new failures,
+existing failures, recoveries, new tests, missing tests, and status transitions. GitHub Actions
+and GitLab CI metadata detection remains token-free; optional APIs enrich metadata only.
+Flaky-test analysis, performance analysis, artifact storage, and publishers remain planned work.
 
 ## Prerequisites
 
@@ -59,6 +59,20 @@ Explicit metadata flags remain available for local execution and override detect
 provided. Use `--ci-provider github`, `--ci-provider gitlab`, or `--ci-provider local` to override
 detection for diagnostics. See [docs/ci-providers.md](docs/ci-providers.md) for precedence,
 identity, retry, security, and optional enrichment details.
+
+After ingesting a baseline and a later run on the same repository, branch, and environment:
+
+```bash
+uv run vera compare <current-run-id>
+uv run vera compare <current-run-id> --baseline <baseline-run-id> --json
+uv run vera regressions <current-run-id> --json
+```
+
+Comparison is an explicit step, so analysis errors cannot roll back successful ingestion.
+A first run returns `no_baseline` (CLI exit 2). Repeating a comparison for the same pair returns
+the existing result. Change requests select their target branch; automatic selection excludes
+executions in the current pipeline. See [baseline selection](docs/baseline-selection.md) and
+[regression comparison](docs/regression-comparison.md) for identity, classifications, and API examples.
 
 Run the API during development:
 

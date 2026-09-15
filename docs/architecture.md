@@ -1,6 +1,6 @@
 # Vera architecture
 
-## Current Phase 2 implementation
+## Current Phase 3 implementation
 
 Vera begins as a modular monolith: one Python package and one deployable API process, divided
 by responsibilities that are expected to change for different reasons.
@@ -8,7 +8,8 @@ by responsibilities that are expected to change for different reasons.
 - `cli` and `api` are delivery mechanisms. They validate input and delegate work rather than
   owning business rules.
 - `application` contains `TestRunIngestionService`, which selects the parser, calculates
-  aggregates, and coordinates atomic/idempotent persistence.
+  aggregates, and coordinates atomic/idempotent persistence. `BaselineSelectionService` selects
+  historical candidates and `RegressionComparisonService` orchestrates atomic comparison storage.
 - `domain` contains typed, provider-neutral concepts and errors. It imports no web framework,
   database, or vendor SDK.
 - `parsers` defines a parser port and a safe JUnit XML adapter. `providers` maps GitHub Actions
@@ -19,8 +20,9 @@ by responsibilities that are expected to change for different reasons.
 - `config` loads typed environment settings. `observability` currently supplies structured
   standard-library logging and is a natural integration point for later OpenTelemetry setup.
 
-The API exposes health, ingestion, retrieval, and paginated listing routes. The CLI exposes
-version, health, CI-context diagnostics, and ingestion commands. PostgreSQL stores normalized
+The API exposes health, ingestion, retrieval, paginated listing, comparison execution, and filtered
+finding retrieval. The CLI exposes version, health, CI-context diagnostics, ingestion, comparison,
+and regression lookup. PostgreSQL stores normalized
 run aggregates and embedded one-to-one CI metadata through a schema protected by foreign keys,
 uniqueness rules, indexes, and consistency checks.
 
@@ -40,7 +42,8 @@ uniqueness rules, indexes, and consistency checks.
    Slack, GitHub, or GitLab.
 
 Steps 2 through 5 are implemented for GitHub Actions, GitLab CI, local/manual metadata, and
-compatible JUnit XML. Analysis and publishing in steps 6 and 7 remain future work. Provider
+compatible JUnit XML. Step 6 now supports historical status comparison; flakiness, duration analysis,
+release readiness, and publishing remain future work. Provider
 environment parsing and HTTP clients are separate from report parsing and persistence. The port
 boundaries prevent vendor concerns from entering the domain and allow asynchronous network I/O
 where it improves throughput without forcing the whole domain to be asynchronous.
@@ -56,3 +59,20 @@ Configuration uses a `VERA_` prefix and can read a local `.env` file. Container 
 an unprivileged user. Logs are one-line JSON for reliable processing in CI and container
 runtimes. OpenTelemetry libraries are deliberately deferred until tracing or metrics have a
 defined deployment target.
+
+## Historical comparison boundaries
+
+Stable identity generation and status classification are pure domain functions. They import no
+provider or database code. The application layer chooses branches, enforces baseline safety, and
+owns transactions; the persistence layer queries exact comparison dimensions and stores summaries
+and findings. API routes and CLI commands delegate to the same services.
+
+Comparison runs explicitly after ingestion. This makes no-baseline and ambiguous-identity errors
+visible without jeopardizing execution history and leaves a clean boundary for future asynchronous
+analysis. Historical runs are never modified during comparison. A migration backfills v1 keys on
+existing cases; new ingestion computes the same algorithm during domain normalization.
+
+Run pairs have one canonical persisted comparison. Run/case foreign keys use restrictive deletion
+to protect historical evidence; findings are deleted only with their owning comparison. No run
+deletion API is provided. See [baseline selection](baseline-selection.md) and
+[comparison rules](regression-comparison.md) for the precise contracts.
