@@ -9,7 +9,14 @@ from defusedxml.common import DefusedXmlException
 
 from vera.domain.enums import ExecutionStatus
 from vera.domain.exceptions import InvalidReportError
-from vera.domain.models import ParsedTestReport, TestCaseExecution, TestFailure, TestSuite
+from vera.domain.models import (
+    ParsedTestReport,
+    TestCaseAttempt,
+    TestCaseExecution,
+    TestFailure,
+    TestSuite,
+)
+from vera.domain.test_identity import stable_test_key
 
 
 class JUnitXmlParser:
@@ -39,13 +46,51 @@ class JUnitXmlParser:
         return ParsedTestReport(suites=suites, started_at=min(timestamps) if timestamps else None)
 
     def _parse_suite(self, element: Element, index: int) -> TestSuite:
-        cases = tuple(
+        name = _optional_text(element.get("name")) or f"unnamed-suite-{index + 1}"
+        package = _optional_text(element.get("package"))
+        cases = [
             self._parse_case(child) for child in element if _local_name(child.tag) == "testcase"
-        )
+        ]
+        grouped: dict[str, list[TestCaseExecution]] = {}
+        for case in cases:
+            key = stable_test_key(
+                suite_name=name,
+                suite_package=package,
+                classname=case.classname,
+                test_name=case.name,
+                file=case.file,
+            )
+            grouped.setdefault(key, []).append(case)
+        normalized: list[TestCaseExecution] = []
+        for group in grouped.values():
+            if len(group) == 1 or all(case.attempt == 1 for case in group):
+                normalized.extend(group)
+                continue
+            ordered = sorted(group, key=lambda case: case.attempt)
+            numbers = [case.attempt for case in ordered]
+            if (
+                numbers != list(range(1, len(group) + 1))
+                or len(group) > 100
+                or any(len(case.attempts) != 1 for case in group)
+            ):
+                raise InvalidReportError(
+                    "Repeated testcase retries require unique contiguous attempts starting at 1"
+                )
+            attempts = tuple(case.attempts[0] for case in ordered)
+            normalized.append(
+                ordered[-1].model_copy(
+                    update={
+                        "attempts": attempts,
+                        "duration_seconds": round(
+                            math.fsum(item.duration_seconds for item in attempts), 9
+                        ),
+                    }
+                )
+            )
         return TestSuite.from_cases(
-            name=_optional_text(element.get("name")) or f"unnamed-suite-{index + 1}",
-            package=_optional_text(element.get("package")),
-            test_cases=cases,
+            name=name,
+            package=package,
+            test_cases=tuple(normalized),
         )
 
     def _parse_case(self, element: Element) -> TestCaseExecution:
@@ -72,14 +117,69 @@ class JUnitXmlParser:
                 stack_trace=_optional_text(outcome.text),
             )
 
+        attempts = [
+            TestCaseAttempt(
+                attempt=_attempt(element.get("attempt")),
+                status=status,
+                duration_seconds=_duration(element.get("time")),
+                failure=failure,
+            )
+        ]
+        flaky = [
+            child for child in element if _local_name(child.tag) in {"flakyFailure", "flakyError"}
+        ]
+        reruns = [
+            child for child in element if _local_name(child.tag) in {"rerunFailure", "rerunError"}
+        ]
+        if flaky or reruns:
+            if (
+                element.get("attempt") is not None
+                or (flaky and (reruns or outcome is not None))
+                or (reruns and status not in {ExecutionStatus.FAILED, ExecutionStatus.ERROR})
+            ):
+                raise InvalidReportError("Conflicting JUnit retry representations")
+            retries = flaky or reruns
+            observed = [] if flaky else attempts
+            for child in retries:
+                trace = next(
+                    (nested.text for nested in child if _local_name(nested.tag) == "stackTrace"),
+                    child.text,
+                )
+                observed.append(
+                    TestCaseAttempt(
+                        attempt=len(observed) + 1,
+                        status=ExecutionStatus.ERROR
+                        if _local_name(child.tag).endswith("Error")
+                        else ExecutionStatus.FAILED,
+                        duration_seconds=0,
+                        failure=TestFailure(
+                            type=_optional_text(child.get("type")),
+                            message=_optional_text(child.get("message")),
+                            stack_trace=_optional_text(trace),
+                        ),
+                    )
+                )
+            if flaky:
+                observed.append(
+                    TestCaseAttempt(
+                        attempt=len(observed) + 1,
+                        status=ExecutionStatus.PASSED,
+                        duration_seconds=_duration(element.get("time")),
+                    )
+                )
+            attempts = observed
+            status, failure = attempts[-1].status, attempts[-1].failure
+        if len(attempts) > 100:
+            raise InvalidReportError("JUnit test retries exceed 100 observed attempts")
         return TestCaseExecution(
             name=_optional_text(element.get("name")) or "unnamed-test",
             classname=_optional_text(element.get("classname")),
             file=_optional_text(element.get("file")),
             duration_seconds=_duration(element.get("time")),
             status=status,
-            attempt=_attempt(element.get("attempt")),
+            attempt=attempts[-1].attempt,
             failure=failure,
+            attempts=tuple(attempts),
         )
 
 

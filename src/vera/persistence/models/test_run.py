@@ -1,7 +1,7 @@
 """Relational representation of normalized test executions."""
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -20,6 +20,9 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from vera.persistence.database import Base
+
+if TYPE_CHECKING:
+    from vera.persistence.models.stability import TestCaseAttemptRecord
 
 
 class TestRunRecord(Base):
@@ -171,6 +174,11 @@ class TestCaseExecutionRecord(Base):
     status: Mapped[str] = mapped_column(String(20))
     attempt: Mapped[int] = mapped_column(Integer, default=1)
     stable_test_key: Mapped[str] = mapped_column(String(67))
+    attempts: Mapped[list["TestCaseAttemptRecord"]] = relationship(
+        back_populates="case",
+        cascade="all, delete-orphan",
+        order_by="TestCaseAttemptRecord.attempt",
+    )
 
     test_suite: Mapped[TestSuiteRecord] = relationship(back_populates="test_cases")
     failure: Mapped["TestFailureRecord | None"] = relationship(

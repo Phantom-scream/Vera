@@ -1,0 +1,5 @@
+<testsuite name="retry-suite">
+  <testcase name="refresh" classname="tests.Auth" attempt="1" time="0.1"><failure message="transient">initial failure</failure></testcase>
+  <testcase name="refresh" classname="tests.Auth" attempt="2" time="0.2"/>
+  <testcase name="surefire" classname="tests.Auth" time="0.3"><flakyError message="timeout"><stackTrace>original timeout</stackTrace></flakyError></testcase>
+</testsuite>

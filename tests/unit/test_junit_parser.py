@@ -83,3 +83,41 @@ def test_rejects_entity_expansion() -> None:
 
     with pytest.raises(InvalidReportError, match="Malformed or unsafe JUnit XML"):
         JUnitXmlParser().parse(content)
+
+
+def test_preserves_explicit_and_surefire_retry_outcomes() -> None:
+    suite = parse_fixture("retries.xml").suites[0]
+    assert suite.total_tests == suite.passed_tests == 2
+    first, second = suite.test_cases
+    assert [item.status for item in first.attempts] == [
+        ExecutionStatus.FAILED,
+        ExecutionStatus.PASSED,
+    ]
+    assert first.attempt == 2 and first.duration_seconds == 0.3
+    assert first.attempts[0].failure.stack_trace == "initial failure"
+    assert second.attempts[0].status is ExecutionStatus.ERROR
+    assert second.attempts[0].failure.stack_trace == "original timeout"
+
+
+def test_surefire_failed_reruns_preserve_initial_and_final_failures() -> None:
+    content = (
+        b'<testsuite><testcase name="x"><failure message="first"/>'
+        b'<rerunError message="last"/></testcase></testsuite>'
+    )
+    case = JUnitXmlParser().parse(content).suites[0].test_cases[0]
+    assert case.status is ExecutionStatus.ERROR
+    assert case.attempts[0].failure.message == "first"
+    assert case.attempts[1].failure.message == "last"
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b'<testsuite><testcase name="x" attempt="1"/><testcase name="x" attempt="3"/></testsuite>',
+        b'<testsuite><testcase name="x" attempt="2"/><testcase name="x" attempt="2"/></testsuite>',
+        b'<testsuite><testcase name="x"><failure/><flakyFailure/></testcase></testsuite>',
+    ],
+)
+def test_rejects_ambiguous_retry_encodings(content: bytes) -> None:
+    with pytest.raises(InvalidReportError):
+        JUnitXmlParser().parse(content)

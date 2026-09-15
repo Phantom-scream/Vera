@@ -15,6 +15,7 @@ from vera.domain.models import (
     EnvironmentContext,
     GitContext,
     PipelineContext,
+    TestCaseAttempt,
     TestCaseExecution,
     TestFailure,
     TestRun,
@@ -22,6 +23,7 @@ from vera.domain.models import (
 )
 from vera.persistence.models import (
     EnvironmentContextRecord,
+    TestCaseAttemptRecord,
     TestCaseExecutionRecord,
     TestFailureRecord,
     TestRunRecord,
@@ -123,6 +125,9 @@ class TestRunRepository:
             selectinload(TestRunRecord.environment),
             selectinload(TestRunRecord.suites)
             .selectinload(TestSuiteRecord.test_cases)
+            .selectinload(TestCaseExecutionRecord.attempts),
+            selectinload(TestRunRecord.suites)
+            .selectinload(TestSuiteRecord.test_cases)
             .selectinload(TestCaseExecutionRecord.failure),
         )
 
@@ -202,6 +207,27 @@ def _to_record(run: TestRun) -> TestRunRecord:
                     status=case.status.value,
                     attempt=case.attempt,
                     stable_test_key=case.stable_test_key,
+                    attempts=[
+                        TestCaseAttemptRecord(
+                            attempt=item.attempt,
+                            status=item.status.value,
+                            duration_seconds=item.duration_seconds,
+                            failure_type=item.failure.type if item.failure else None,
+                            failure_message=item.failure.message if item.failure else None,
+                            stack_trace=item.failure.stack_trace if item.failure else None,
+                        )
+                        for item in (
+                            case.attempts
+                            or (
+                                TestCaseAttempt(
+                                    attempt=case.attempt,
+                                    status=case.status,
+                                    duration_seconds=case.duration_seconds,
+                                    failure=case.failure,
+                                ),
+                            )
+                        )
+                    ],
                     failure=(
                         TestFailureRecord(
                             id=case.failure.id,
@@ -296,6 +322,21 @@ def _to_domain(record: TestRunRecord) -> TestRun:
                         status=ExecutionStatus(case.status),
                         attempt=case.attempt,
                         stable_test_key=case.stable_test_key,
+                        attempts=tuple(
+                            TestCaseAttempt(
+                                attempt=item.attempt,
+                                status=ExecutionStatus(item.status),
+                                duration_seconds=item.duration_seconds,
+                                failure=TestFailure(
+                                    type=item.failure_type,
+                                    message=item.failure_message,
+                                    stack_trace=item.stack_trace,
+                                )
+                                if item.status in {"failed", "error"}
+                                else None,
+                            )
+                            for item in case.attempts
+                        ),
                         failure=(
                             TestFailure(
                                 id=case.failure.id,

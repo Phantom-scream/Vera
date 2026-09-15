@@ -21,6 +21,23 @@ class TestFailure(DomainModel):
     stack_trace: str | None = None
 
 
+class TestCaseAttempt(DomainModel):
+    """One observed test attempt, distinct from a CI job rerun."""
+
+    attempt: int = Field(ge=1)
+    status: ExecutionStatus
+    duration_seconds: float = Field(default=0, ge=0, allow_inf_nan=False)
+    failure: TestFailure | None = None
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> Self:
+        if (self.status in {ExecutionStatus.FAILED, ExecutionStatus.ERROR}) != (
+            self.failure is not None
+        ):
+            raise ValueError("failed attempts must contain failure details")
+        return self
+
+
 class TestCaseExecution(DomainModel):
     """A normalized execution of one test case."""
 
@@ -32,6 +49,7 @@ class TestCaseExecution(DomainModel):
     status: ExecutionStatus
     attempt: int = Field(default=1, ge=1)
     failure: TestFailure | None = None
+    attempts: tuple[TestCaseAttempt, ...] = ()
     stable_test_key: str | None = Field(default=None, pattern=r"^v[0-9]+:[0-9a-f]{64}$")
 
     @model_validator(mode="after")
@@ -39,6 +57,18 @@ class TestCaseExecution(DomainModel):
         has_failure_status = self.status in {ExecutionStatus.FAILED, ExecutionStatus.ERROR}
         if has_failure_status != (self.failure is not None):
             raise ValueError("failed and errored test cases must contain failure details")
+        if self.attempts:
+            numbers = [item.attempt for item in self.attempts]
+            if numbers != sorted(set(numbers)) or len(numbers) > 100:
+                raise ValueError("attempts must be uniquely ordered and bounded to 100")
+            final = self.attempts[-1]
+            if (
+                final.attempt != self.attempt
+                or final.status != self.status
+                or (final.failure.model_dump(exclude={"id"}) if final.failure else None)
+                != (self.failure.model_dump(exclude={"id"}) if self.failure else None)
+            ):
+                raise ValueError("case final outcome must match its last attempt")
         return self
 
 
