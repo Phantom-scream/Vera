@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vera.application.services.failure_intelligence import FailureFingerprintService
 from vera.domain.exceptions import TestRunNotFoundError, UnsupportedReportError
 from vera.domain.models import EnvironmentContext, PipelineContext, TestRun
 from vera.parsers import JUnitXmlParser, TestResultParser
@@ -50,6 +51,7 @@ class TestRunIngestionService:
                 if existing is not None:
                     return IngestionResult(test_run=existing, created=False)
                 stored = await repository.add(run)
+                await FailureFingerprintService().materialize_run(stored.id, session)
             return IngestionResult(test_run=stored, created=True)
         except IntegrityError:
             await session.rollback()

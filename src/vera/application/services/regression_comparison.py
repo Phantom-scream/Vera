@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +16,7 @@ from vera.domain.exceptions import (
     AmbiguousTestIdentityError,
     ComparisonNotFoundError,
 )
+from vera.domain.failures import FINGERPRINT_VERSION, normalize_failure
 from vera.domain.models import (
     BaselineSelection,
     ComparisonResult,
@@ -22,6 +24,7 @@ from vera.domain.models import (
     TestComparisonFinding,
 )
 from vera.domain.models.stability import ScoringPolicy
+from vera.persistence.models import FailureFamilyRecord
 from vera.persistence.repositories import ComparisonRepository, TestRunRepository
 
 logger = logging.getLogger(__name__)
@@ -196,16 +199,42 @@ class RegressionComparisonService:
             reference=reference, session=session, keys=[item.test_key for item in page.findings]
         )
         by_key = {item.test_key: item for item in analyses}
-        findings = [
-            item.model_copy(
-                update={
-                    "stability": by_key[item.test_key].classification,
-                    "flaky_score": by_key[item.test_key].flaky_score,
-                    "stability_scoring_version": by_key[item.test_key].scoring_version,
-                }
+        family_by_case: dict[UUID, FailureFamilyRecord] = {}
+        for suite in reference.suites:
+            for case in suite.test_cases:
+                failure = case.failure
+                if failure is None:
+                    continue
+                normalized = normalize_failure(failure.type, failure.message, failure.stack_trace)
+                family = await session.scalar(
+                    select(FailureFamilyRecord).where(
+                        FailureFamilyRecord.fingerprint == normalized.fingerprint,
+                        FailureFamilyRecord.fingerprint_version == FINGERPRINT_VERSION,
+                    )
+                )
+                if family is not None:
+                    family_by_case[case.id] = family
+        findings = []
+        for item in page.findings:
+            family = family_by_case.get(item.current_case_id) if item.current_case_id else None
+            findings.append(
+                item.model_copy(
+                    update={
+                        "stability": by_key[item.test_key].classification,
+                        "flaky_score": by_key[item.test_key].flaky_score,
+                        "stability_scoring_version": by_key[item.test_key].scoring_version,
+                        "failure_fingerprint": family.fingerprint if family else None,
+                        "failure_family_id": family.id if family else None,
+                        "failure_recurrence": (
+                            "recent_recurring"
+                            if family and family.occurrence_count > 1
+                            else "new_failure_pattern"
+                            if family
+                            else None
+                        ),
+                    }
+                )
             )
-            for item in page.findings
-        ]
         return FindingPage(page.comparison, findings, page.total, page.offset, page.limit)
 
 

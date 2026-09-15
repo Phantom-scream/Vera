@@ -37,6 +37,9 @@ class TestComparisonFinding(DomainModel):
     stability: StabilityClass | None = None
     flaky_score: float | None = None
     stability_scoring_version: str | None = None
+    failure_fingerprint: str | None = None
+    failure_family_id: UUID | None = None
+    failure_recurrence: str | None = None
 
 
 class RegressionComparison(DomainModel):

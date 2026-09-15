@@ -15,6 +15,7 @@ from vera.application.services import (
     RegressionComparisonService,
     TestRunIngestionService,
 )
+from vera.application.services.failure_intelligence import FailureIntelligenceService
 from vera.application.services.flaky_analysis import FlakyTestAnalysisService
 from vera.application.services.test_history import TestHistoryService
 from vera.config import get_settings
@@ -147,6 +148,88 @@ def history(
                 f"initial={item.initial_status or 'unknown'} final={item.final_status} "
                 f"attempts={len(item.attempt_statuses)}"
             )
+
+
+@app.command(name="failures")
+def failures(
+    run_id: Annotated[UUID, typer.Option("--run")],
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Group a test run's failures by deterministic fingerprint family."""
+    try:
+        items = asyncio.run(_run_failures(run_id))
+    except (SQLAlchemyError, VeraError) as exc:
+        typer.echo(f"Failure lookup failed: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    if json_output:
+        typer.echo(json.dumps(items, default=str))
+    else:
+        typer.echo(f"Run: {run_id}\nFailure families: {len(items)}")
+        for item in items:
+            typer.echo(
+                f"{item['recurrence']} | {item['canonical_type']}: "
+                f"{item['canonical_message']}\nAffected tests: {item['affected_test_count']}\n"
+                f"Occurrences: {item['occurrence_count']}"
+            )
+
+
+@app.command(name="failure")
+def failure(family_id: UUID, json_output: bool = typer.Option(False, "--json")) -> None:
+    """Inspect one failure family by UUID."""
+    try:
+        item = asyncio.run(_failure_family(family_id))
+    except (SQLAlchemyError, VeraError) as exc:
+        typer.echo(f"Failure lookup failed: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(
+        json.dumps(item, default=str)
+        if json_output
+        else f"{item['fingerprint']} {item['recurrence']} occurrences={item['occurrence_count']}"
+    )
+
+
+@app.command()
+def recurring(json_output: bool = typer.Option(False, "--json")) -> None:
+    """List recent deterministic failure families."""
+    try:
+        items = asyncio.run(_recurring_families())
+    except (SQLAlchemyError, VeraError) as exc:
+        typer.echo(f"Failure lookup failed: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(
+        json.dumps(items, default=str) if json_output else "\n".join(str(item) for item in items)
+    )
+
+
+async def _run_failures(run_id: UUID) -> list[dict[str, object]]:
+    database = Database(get_settings().database_url)
+    try:
+        async with database.session_factory() as session:
+            return await FailureIntelligenceService().run_families(run_id, session)
+    finally:
+        await database.dispose()
+
+
+async def _failure_family(family_id: UUID) -> dict[str, object]:
+    database = Database(get_settings().database_url)
+    try:
+        async with database.session_factory() as session:
+            item = await FailureIntelligenceService().family(family_id, session)
+            if item is None:
+                raise VeraError("Failure family was not found")
+            return item
+    finally:
+        await database.dispose()
+
+
+async def _recurring_families() -> list[dict[str, object]]:
+    database = Database(get_settings().database_url)
+    try:
+        async with database.session_factory() as session:
+            items, _total = await FailureIntelligenceService().list_families(0, 100, session)
+            return items
+    finally:
+        await database.dispose()
 
 
 async def _stability_analysis(

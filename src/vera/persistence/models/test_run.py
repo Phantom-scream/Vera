@@ -22,6 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from vera.persistence.database import Base
 
 if TYPE_CHECKING:
+    from vera.persistence.models.failure import FailureFamilyRecord
     from vera.persistence.models.stability import TestCaseAttemptRecord
 
 
@@ -200,8 +201,16 @@ class TestFailureRecord(Base):
     type: Mapped[str | None] = mapped_column(String(1000))
     message: Mapped[str | None] = mapped_column(Text)
     stack_trace: Mapped[str | None] = mapped_column(Text)
+    normalized_type: Mapped[str | None] = mapped_column(String(500))
+    normalized_message: Mapped[str | None] = mapped_column(Text)
+    fingerprint: Mapped[str | None] = mapped_column(String(64), index=True)
+    fingerprint_version: Mapped[str | None] = mapped_column(String(50))
+    failure_family_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("failure_families.id", ondelete="RESTRICT"), index=True
+    )
 
     test_case_execution: Mapped[TestCaseExecutionRecord] = relationship(back_populates="failure")
+    family: Mapped["FailureFamilyRecord | None"] = relationship(back_populates="failures")
 
 
 class EnvironmentContextRecord(Base):

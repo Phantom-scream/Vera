@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from vera import __version__
 from vera.api.routes.comparisons import router as comparisons_router
+from vera.api.routes.failures import router as failures_router
 from vera.api.routes.health import router as health_router
 from vera.api.routes.stability import router as stability_router
 from vera.api.routes.test_runs import router as test_runs_router
@@ -48,6 +49,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(test_runs_router, prefix="/api/v1")
     app.include_router(comparisons_router, prefix="/api/v1")
     app.include_router(stability_router, prefix="/api/v1")
+    app.include_router(failures_router, prefix="/api/v1")
 
     @app.exception_handler(TestRunNotFoundError)
     async def handle_not_found(_request: Request, exc: TestRunNotFoundError) -> JSONResponse:
