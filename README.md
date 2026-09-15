@@ -4,11 +4,11 @@ Vera is a CI-native automated test reporting and regression intelligence platfor
 intended to run after regression jobs, normalize their results, retain execution history,
 analyze changes, and publish useful reports to engineering tools.
 
-Phase 3 adds deterministic historical regression comparison to CI-aware JUnit ingestion.
-Vera selects comparable earlier runs, matches stable test identities, and persists new failures,
-existing failures, recoveries, new tests, missing tests, and status transitions. GitHub Actions
-and GitLab CI metadata detection remains token-free; optional APIs enrich metadata only.
-Flaky-test analysis, performance analysis, artifact storage, and publishers remain planned work.
+Phase 4 adds deterministic flaky-test intelligence to CI-aware JUnit ingestion and historical
+comparison. Vera preserves reported test attempts, computes bounded compatible histories, and
+classifies stability without changing regression classifications. GitHub Actions and GitLab CI
+metadata detection remains token-free; optional APIs enrich metadata only. Performance analysis,
+artifact storage, and publishers remain planned work.
 
 ## Prerequisites
 
@@ -74,11 +74,32 @@ the existing result. Change requests select their target branch; automatic selec
 executions in the current pipeline. See [baseline selection](docs/baseline-selection.md) and
 [regression comparison](docs/regression-comparison.md) for identity, classifications, and API examples.
 
+Use persisted compatible history to inspect one test or every test in a run:
+
+```bash
+uv run vera flaky tests.auth::test_refresh_token --repository startup/backend --window 50
+uv run vera flaky --run <run-id> --json
+uv run vera history tests.auth::test_refresh_token --repository startup/backend --sequence --json
+```
+
+The default `flaky-v1` calculation requires evidence from ten independent pipelines before it
+assigns a strong stability class. It distinguishes an individual test retry from a CI job rerun,
+and keeps a `NEW_FAILURE` finding intact while adding its stability class. See
+[flaky-test analysis](docs/flaky-tests.md) and [reruns and retries](docs/reruns-and-retries.md).
+
 Run the API during development:
 
 ```bash
 uv run uvicorn vera.api.app:create_app --factory --reload
 curl http://127.0.0.1:8000/api/v1/health
+```
+
+Stability endpoints accept a URL-encoded stable test key and return bounded history or an
+explainable snapshot:
+
+```bash
+curl 'http://127.0.0.1:8000/api/v1/tests/tests.auth%3A%3Atest_refresh_token/stability?repository=startup/backend&window=50'
+curl 'http://127.0.0.1:8000/api/v1/test-runs/<run-id>/flaky-tests?classification=FLAKY'
 ```
 
 The health endpoint reports process liveness and the installed Vera version. It deliberately

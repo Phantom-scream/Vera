@@ -1,6 +1,6 @@
 # Vera architecture
 
-## Current Phase 3 implementation
+## Current Phase 4 implementation
 
 Vera begins as a modular monolith: one Python package and one deployable API process, divided
 by responsibilities that are expected to change for different reasons.
@@ -9,7 +9,8 @@ by responsibilities that are expected to change for different reasons.
   owning business rules.
 - `application` contains `TestRunIngestionService`, which selects the parser, calculates
   aggregates, and coordinates atomic/idempotent persistence. `BaselineSelectionService` selects
-  historical candidates and `RegressionComparisonService` orchestrates atomic comparison storage.
+  historical candidates, `RegressionComparisonService` orchestrates atomic comparison storage,
+  and `FlakyTestAnalysisService` calculates bounded, environment-compatible stability history.
 - `domain` contains typed, provider-neutral concepts and errors. It imports no web framework,
   database, or vendor SDK.
 - `parsers` defines a parser port and a safe JUnit XML adapter. `providers` maps GitHub Actions
@@ -20,9 +21,9 @@ by responsibilities that are expected to change for different reasons.
 - `config` loads typed environment settings. `observability` currently supplies structured
   standard-library logging and is a natural integration point for later OpenTelemetry setup.
 
-The API exposes health, ingestion, retrieval, paginated listing, comparison execution, and filtered
-finding retrieval. The CLI exposes version, health, CI-context diagnostics, ingestion, comparison,
-and regression lookup. PostgreSQL stores normalized
+The API exposes health, ingestion, retrieval, paginated listing, comparison execution, filtered
+finding retrieval, and stability history. The CLI exposes version, health, CI-context diagnostics,
+ingestion, comparison, regression lookup, and flaky/history analysis. PostgreSQL stores normalized
 run aggregates and embedded one-to-one CI metadata through a schema protected by foreign keys,
 uniqueness rules, indexes, and consistency checks.
 
@@ -42,8 +43,8 @@ uniqueness rules, indexes, and consistency checks.
    Slack, GitHub, or GitLab.
 
 Steps 2 through 5 are implemented for GitHub Actions, GitLab CI, local/manual metadata, and
-compatible JUnit XML. Step 6 now supports historical status comparison; flakiness, duration analysis,
-release readiness, and publishing remain future work. Provider
+compatible JUnit XML. Step 6 now supports historical comparison and deterministic flakiness;
+duration analysis, release readiness, and publishing remain future work. Provider
 environment parsing and HTTP clients are separate from report parsing and persistence. The port
 boundaries prevent vendor concerns from entering the domain and allow asynchronous network I/O
 where it improves throughput without forcing the whole domain to be asynchronous.
@@ -76,3 +77,17 @@ Run pairs have one canonical persisted comparison. Run/case foreign keys use res
 to protect historical evidence; findings are deleted only with their owning comparison. No run
 deletion API is provided. See [baseline selection](baseline-selection.md) and
 [comparison rules](regression-comparison.md) for the precise contracts.
+
+## Retry and stability boundaries
+
+`TestCaseExecution` represents the final reported outcome and remains the input to historical
+comparison. `TestCaseAttempt` preserves every normalized individual retry reported by JUnit. A CI
+job rerun is a distinct `TestRun`; provider-specific series grouping lives in `providers`, outside
+the domain scoring code. The history repository uses two bounded bulk PostgreSQL queries, indexed
+by repository, stable key, and compatible environment dimensions, so run-level analysis does not
+issue one query per test.
+
+The domain scoring function is pure and versioned (`flaky-v1`). Snapshot records retain the inputs,
+policy key, score, and classification for auditability without changing raw execution history or
+persisted regression classifications. See [flaky-test analysis](flaky-tests.md) and
+[reruns and retries](reruns-and-retries.md) for the contracts.
