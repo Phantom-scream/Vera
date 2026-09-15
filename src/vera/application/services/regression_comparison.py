@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vera.application.services.baseline_selection import BaselineSelectionService
+from vera.application.services.flaky_analysis import FlakyTestAnalysisService
 from vera.domain.comparison import compare_test_runs
 from vera.domain.enums import FindingClassification
 from vera.domain.exceptions import (
@@ -20,6 +21,7 @@ from vera.domain.models import (
     RegressionComparison,
     TestComparisonFinding,
 )
+from vera.domain.models.stability import ScoringPolicy
 from vera.persistence.repositories import ComparisonRepository, TestRunRepository
 
 logger = logging.getLogger(__name__)
@@ -182,6 +184,29 @@ class RegressionComparisonService:
             offset=offset,
             limit=limit,
         )
+
+    async def enrich(
+        self, page: FindingPage, session: AsyncSession, policy: ScoringPolicy | None = None
+    ) -> FindingPage:
+        """Attach current stability without modifying canonical regression classifications."""
+        reference = await TestRunRepository(session).get(page.comparison.current_run_id)
+        if reference is None:
+            raise ComparisonNotFoundError("Comparison current run was not found")
+        analyses = await FlakyTestAnalysisService(policy).analyze(
+            reference=reference, session=session, keys=[item.test_key for item in page.findings]
+        )
+        by_key = {item.test_key: item for item in analyses}
+        findings = [
+            item.model_copy(
+                update={
+                    "stability": by_key[item.test_key].classification,
+                    "flaky_score": by_key[item.test_key].flaky_score,
+                    "stability_scoring_version": by_key[item.test_key].scoring_version,
+                }
+            )
+            for item in page.findings
+        ]
+        return FindingPage(page.comparison, findings, page.total, page.offset, page.limit)
 
 
 def _selection_from_comparison(comparison: RegressionComparison) -> BaselineSelection:

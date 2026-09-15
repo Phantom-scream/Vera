@@ -3,7 +3,7 @@
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -72,6 +72,8 @@ async def compare_test_run(
 async def get_run_comparison(
     run_id: UUID,
     session: SessionDependency,
+    request: Request,
+    include_stability: bool = False,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     classification: FindingClassification | None = None,
@@ -85,6 +87,8 @@ async def get_run_comparison(
         classification=classification,
         session=session,
     )
+    if include_stability:
+        page = await service.enrich(page, session, request.app.state.settings.stability_policy)
     return _page_response(page)
 
 
@@ -92,6 +96,8 @@ async def get_run_comparison(
 async def get_comparison(
     comparison_id: UUID,
     session: SessionDependency,
+    request: Request,
+    include_stability: bool = False,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     classification: FindingClassification | None = None,
@@ -105,6 +111,8 @@ async def get_comparison(
         classification=classification,
         session=session,
     )
+    if include_stability:
+        page = await service.enrich(page, session, request.app.state.settings.stability_policy)
     return _page_response(page)
 
 

@@ -7,6 +7,8 @@ from urllib.parse import urlsplit
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from vera.domain.models.stability import ScoringPolicy
+
 
 class Environment(StrEnum):
     """Supported application environments."""
@@ -39,6 +41,7 @@ class Settings(BaseSettings):
     github_api_url: str = "https://api.github.com"
     ci_provider_override: str | None = None
     provider_api_timeout: float = Field(default=5.0, gt=0, le=60)
+    stability_policy: ScoringPolicy = Field(default_factory=ScoringPolicy)
 
     @field_validator("gitlab_api_url", "github_api_url")
     @classmethod

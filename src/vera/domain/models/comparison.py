@@ -7,6 +7,7 @@ from pydantic import Field
 
 from vera.domain.enums import BaselineStrategy, ExecutionStatus, FindingClassification
 from vera.domain.models.base import DomainModel
+from vera.domain.models.stability import StabilityClass
 
 
 class BaselineSelection(DomainModel):
@@ -33,6 +34,9 @@ class TestComparisonFinding(DomainModel):
     baseline_status: ExecutionStatus | None = None
     current_status: ExecutionStatus | None = None
     classification: FindingClassification
+    stability: StabilityClass | None = None
+    flaky_score: float | None = None
+    stability_scoring_version: str | None = None
 
 
 class RegressionComparison(DomainModel):

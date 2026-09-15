@@ -15,6 +15,8 @@ from vera.application.services import (
     RegressionComparisonService,
     TestRunIngestionService,
 )
+from vera.application.services.flaky_analysis import FlakyTestAnalysisService
+from vera.application.services.test_history import TestHistoryService
 from vera.config import get_settings
 from vera.domain.enums import FindingClassification
 from vera.domain.exceptions import ReportTooLargeError, VeraError
@@ -24,6 +26,7 @@ from vera.domain.models import (
     EnvironmentContext,
     PipelineContext,
 )
+from vera.domain.models.stability import TestStabilityAnalysis
 from vera.persistence import Database
 from vera.providers import CIProviderDetector, enrich_ci_context, resolve_pipeline_context
 
@@ -60,6 +63,110 @@ def health() -> None:
     """Confirm that the local Vera CLI is operational."""
 
     typer.echo(json.dumps({"status": "ok", "version": __version__}))
+
+
+@app.command()
+def flaky(
+    test_key: Annotated[str | None, typer.Argument(help="Stable v1 test key.")] = None,
+    run_id: Annotated[
+        UUID | None, typer.Option("--run", help="Reference run and environment.")
+    ] = None,
+    repository: str | None = typer.Option(None),
+    window: int = typer.Option(50, min=1, max=100),
+    json_output: bool = typer.Option(False, "--json"),
+    sequence: bool = typer.Option(False, "--sequence"),
+) -> None:
+    """Analyze a test or every test in a run using bounded comparable history."""
+    try:
+        results = asyncio.run(_stability_analysis(test_key, repository, run_id, window))
+    except SQLAlchemyError as exc:
+        typer.echo("Stability failed: database operation failed", err=True)
+        raise typer.Exit(1) from exc
+    except (VeraError, ValidationError) as exc:
+        typer.echo(f"Stability failed: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    if json_output:
+        typer.echo(
+            json.dumps(
+                [
+                    item.model_dump(mode="json", exclude=set() if sequence else {"observations"})
+                    for item in results
+                ]
+            )
+        )
+    else:
+        for item in results:
+            stats = item.statistics
+            typer.echo(
+                f"Test: {item.test_key}\nHistory: {stats.total_executions} executions "
+                f"({stats.independent_pipelines} independent pipelines)\n"
+                f"Passed: {stats.passed_executions} Failed: {stats.failed_executions} "
+                f"Errored: {stats.errored_executions} Skipped: {stats.skipped_executions}\n"
+                f"Failure rate: {stats.failure_rate:.1%} Status flips: {stats.status_flip_count}\n"
+                f"Retry recoveries: {stats.retry_recoveries}\n"
+                f"Reliability score: {item.reliability_score}/100\n"
+                f"Flaky score: {item.flaky_score}/100\n"
+                f"Classification: {item.classification.value}\n"
+                f"Scoring version: {item.scoring_version}\nReason: {item.reason}"
+            )
+            if sequence:
+                typer.echo(
+                    "Sequence: "
+                    + ", ".join(
+                        f"{obs.initial_status or 'unknown'}->{obs.final_status}"
+                        for obs in item.observations
+                    )
+                )
+
+
+@app.command()
+def history(
+    test_key: str,
+    run_id: Annotated[UUID | None, typer.Option("--run")] = None,
+    repository: str | None = typer.Option(None),
+    window: int = typer.Option(50, min=1, max=100),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show a bounded recent execution sequence for a stable test identity."""
+    try:
+        results = asyncio.run(_stability_analysis(test_key, repository, run_id, window))
+    except SQLAlchemyError as exc:
+        typer.echo("History failed: database operation failed", err=True)
+        raise typer.Exit(1) from exc
+    except (VeraError, ValidationError) as exc:
+        typer.echo(f"History failed: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    result = results[0]
+    if json_output:
+        typer.echo(result.model_dump_json())
+    else:
+        typer.echo(f"Test: {test_key} History: {result.statistics.total_executions} executions")
+        for item in reversed(result.observations):
+            typer.echo(
+                f"{item.created_at.isoformat()} {item.run_id} "
+                f"initial={item.initial_status or 'unknown'} final={item.final_status} "
+                f"attempts={len(item.attempt_statuses)}"
+            )
+
+
+async def _stability_analysis(
+    test_key: str | None, repository: str | None, run_id: UUID | None, window: int
+) -> list[TestStabilityAnalysis]:
+    settings = get_settings()
+    database = Database(settings.database_url)
+    try:
+        async with database.session_factory() as session:
+            reference = await TestHistoryService().reference(
+                test_key=test_key, repository=repository, run_id=run_id, session=session
+            )
+            return await FlakyTestAnalysisService(settings.stability_policy).analyze(
+                reference=reference,
+                session=session,
+                window=window,
+                keys=[test_key] if test_key else None,
+            )
+    finally:
+        await database.dispose()
 
 
 @app.command()
@@ -171,7 +278,10 @@ def regressions(
     else:
         typer.echo(f"New failures: {page.total}")
         for finding in page.findings:
-            typer.echo(f"- {finding.test_key}")
+            typer.echo(
+                f"- {finding.test_key} regression={finding.classification.value} "
+                f"stability={finding.stability or 'not_analyzed'} score={finding.flaky_score}"
+            )
 
 
 @app.command()
@@ -285,13 +395,15 @@ async def _regressions(run_id: UUID) -> FindingPage:
     database = Database(settings.database_url)
     try:
         async with database.session_factory() as session:
-            return await RegressionComparisonService().for_run(
+            service = RegressionComparisonService()
+            page = await service.for_run(
                 run_id=run_id,
                 offset=0,
                 limit=500,
                 classification=FindingClassification.NEW_FAILURE,
                 session=session,
             )
+            return await service.enrich(page, session, settings.stability_policy)
     finally:
         await database.dispose()
 
