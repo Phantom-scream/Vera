@@ -2,16 +2,28 @@ import asyncio
 import json
 from pathlib import Path
 from typing import Annotated
+from uuid import UUID
 
 import typer
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from vera import __version__
-from vera.application.services import IngestionResult, TestRunIngestionService
+from vera.application.services import (
+    FindingPage,
+    IngestionResult,
+    RegressionComparisonService,
+    TestRunIngestionService,
+)
 from vera.config import get_settings
+from vera.domain.enums import FindingClassification
 from vera.domain.exceptions import ReportTooLargeError, VeraError
-from vera.domain.models import DetectedCIContext, EnvironmentContext, PipelineContext
+from vera.domain.models import (
+    ComparisonResult,
+    DetectedCIContext,
+    EnvironmentContext,
+    PipelineContext,
+)
 from vera.persistence import Database
 from vera.providers import CIProviderDetector, enrich_ci_context, resolve_pipeline_context
 
@@ -80,6 +92,86 @@ def context(
             f"CI context: {ci.provider} repository={ci.repository} "
             f"pipeline={ci.pipeline_id} job={ci.job_id} attempt={ci.run_attempt}"
         )
+
+
+@app.command()
+def compare(
+    current_run_id: UUID,
+    baseline: Annotated[
+        UUID | None, typer.Option(help="Explicit historical baseline run ID.")
+    ] = None,
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+) -> None:
+    """Compare a test run with an automatic or explicit baseline."""
+
+    try:
+        result = asyncio.run(_compare_run(current_run_id, baseline))
+    except SQLAlchemyError as exc:
+        typer.echo(
+            "Comparison failed: database operation failed; check connectivity and migrations",
+            err=True,
+        )
+        raise typer.Exit(code=1) from exc
+    except (ValidationError, VeraError) as exc:
+        typer.echo(f"Comparison failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    if json_output:
+        typer.echo(result.model_dump_json())
+    elif result.comparison is None:
+        typer.echo(f"No baseline: {result.selection.reason}")
+    else:
+        comparison = result.comparison
+        typer.echo(
+            f"Current run: {comparison.current_run_id}\n"
+            f"Baseline: {comparison.baseline_run_id}\n"
+            f"Baseline reason: {comparison.baseline_reason}\n\n"
+            f"Tests\nCurrent: {comparison.current_total}\n"
+            f"Baseline: {comparison.baseline_total}\n\n"
+            f"Changes\nNew failures: {comparison.new_failures}\n"
+            f"Existing failures: {comparison.existing_failures}\n"
+            f"Recovered: {comparison.recovered_tests}\n"
+            f"New tests: {comparison.new_tests}\n"
+            f"Missing tests: {comparison.missing_tests}\n"
+            f"Status changes: {comparison.status_changes}"
+        )
+    if result.comparison is None:
+        raise typer.Exit(code=2)
+
+
+@app.command()
+def regressions(
+    run_id: UUID,
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+) -> None:
+    """Show new failures from a run's latest persisted comparison."""
+
+    try:
+        page = asyncio.run(_regressions(run_id))
+    except SQLAlchemyError as exc:
+        typer.echo(
+            "Regression lookup failed: database operation failed; "
+            "check connectivity and migrations",
+            err=True,
+        )
+        raise typer.Exit(code=1) from exc
+    except (ValidationError, VeraError) as exc:
+        typer.echo(f"Regression lookup failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "comparison": page.comparison.model_dump(mode="json"),
+                    "items": [finding.model_dump(mode="json") for finding in page.findings],
+                    "total": page.total,
+                },
+                sort_keys=True,
+            )
+        )
+    else:
+        typer.echo(f"New failures: {page.total}")
+        for finding in page.findings:
+            typer.echo(f"- {finding.test_key}")
 
 
 @app.command()
@@ -172,6 +264,36 @@ async def _prepare_and_ingest(
         pipeline=pipeline,
         environment=environment,
     )
+
+
+async def _compare_run(current_run_id: UUID, baseline_run_id: UUID | None) -> ComparisonResult:
+    settings = get_settings()
+    database = Database(settings.database_url)
+    try:
+        async with database.session_factory() as session:
+            return await RegressionComparisonService().compare(
+                current_run_id=current_run_id,
+                baseline_run_id=baseline_run_id,
+                session=session,
+            )
+    finally:
+        await database.dispose()
+
+
+async def _regressions(run_id: UUID) -> FindingPage:
+    settings = get_settings()
+    database = Database(settings.database_url)
+    try:
+        async with database.session_factory() as session:
+            return await RegressionComparisonService().for_run(
+                run_id=run_id,
+                offset=0,
+                limit=500,
+                classification=FindingClassification.NEW_FAILURE,
+                session=session,
+            )
+    finally:
+        await database.dispose()
 
 
 async def _ingest(

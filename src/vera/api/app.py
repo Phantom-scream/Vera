@@ -7,10 +7,13 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from vera import __version__
+from vera.api.routes.comparisons import router as comparisons_router
 from vera.api.routes.health import router as health_router
 from vera.api.routes.test_runs import router as test_runs_router
 from vera.config import Settings, get_settings
 from vera.domain.exceptions import (
+    AmbiguousTestIdentityError,
+    ComparisonNotFoundError,
     InvalidReportError,
     ReportTooLargeError,
     TestRunNotFoundError,
@@ -42,10 +45,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = runtime_settings
     app.include_router(health_router, prefix="/api/v1")
     app.include_router(test_runs_router, prefix="/api/v1")
+    app.include_router(comparisons_router, prefix="/api/v1")
 
     @app.exception_handler(TestRunNotFoundError)
     async def handle_not_found(_request: Request, exc: TestRunNotFoundError) -> JSONResponse:
         return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    @app.exception_handler(ComparisonNotFoundError)
+    async def handle_comparison_not_found(
+        _request: Request, exc: ComparisonNotFoundError
+    ) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    @app.exception_handler(AmbiguousTestIdentityError)
+    async def handle_ambiguous_identity(
+        _request: Request, exc: AmbiguousTestIdentityError
+    ) -> JSONResponse:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
 
     @app.exception_handler(ReportTooLargeError)
     async def handle_too_large(_request: Request, exc: ReportTooLargeError) -> JSONResponse:

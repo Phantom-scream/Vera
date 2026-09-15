@@ -1,9 +1,13 @@
 import json
 from pathlib import Path
+from uuid import uuid4
 
+import pytest
+from sqlalchemy.exc import SQLAlchemyError
 from typer.testing import CliRunner
 
 from vera import __version__
+from vera.cli import app as cli_module
 from vera.cli.app import app
 from vera.config import get_settings
 
@@ -76,3 +80,19 @@ def test_ingest_returns_nonzero_for_malformed_xml() -> None:
 
     assert result.exit_code == 1
     assert "Malformed or unsafe JUnit XML" in result.output
+
+
+@pytest.mark.parametrize(
+    ("command", "helper"), [("compare", "_compare_run"), ("regressions", "_regressions")]
+)
+def test_comparison_database_errors_do_not_print_sensitive_parameters(
+    command: str, helper: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def fail(*args: object) -> None:
+        raise SQLAlchemyError("sensitive-database-parameter")
+
+    monkeypatch.setattr(cli_module, helper, fail)
+    result = runner.invoke(app, [command, str(uuid4())])
+    assert result.exit_code == 1
+    assert "database operation failed" in result.output
+    assert "sensitive-database-parameter" not in result.output
