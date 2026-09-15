@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="regression" tests="6">
+  <testcase classname="tests.Regression" name="new_failure" time="0.1" />
+  <testcase classname="tests.Regression" name="existing_failure" time="0.1">
+    <failure type="AssertionError" message="already failing">baseline stack</failure>
+  </testcase>
+  <testcase classname="tests.Regression" name="recovered" time="0.1">
+    <failure type="AssertionError" message="will recover">baseline stack</failure>
+  </testcase>
+  <testcase classname="tests.Regression" name="unchanged_pass" time="0.1" />
+  <testcase classname="tests.Regression" name="missing_test" time="0.1" />
+  <testcase classname="tests.Regression" name="newly_skipped" time="0.1" />
+</testsuite>

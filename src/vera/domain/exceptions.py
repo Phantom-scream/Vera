@@ -22,6 +22,18 @@ class ProviderRateLimitError(ProviderApiError):
     """A provider API rate limit prevented enrichment."""
 
 
+class InvalidBaselineError(VeraError):
+    """An explicit or automatic baseline violates comparison safety rules."""
+
+
+class AmbiguousTestIdentityError(VeraError):
+    """Duplicate stable keys prevent deterministic test matching."""
+
+
+class ComparisonNotFoundError(VeraError):
+    """A requested persisted comparison does not exist."""
+
+
 class InvalidReportError(VeraError):
     """Raised when an external test report cannot be safely normalized."""
 

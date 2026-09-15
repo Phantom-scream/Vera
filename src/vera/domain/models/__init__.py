@@ -7,6 +7,12 @@ from vera.domain.models.ci import (
     DetectedCIContext,
     GitContext,
 )
+from vera.domain.models.comparison import (
+    BaselineSelection,
+    ComparisonResult,
+    RegressionComparison,
+    TestComparisonFinding,
+)
 from vera.domain.models.test_run import (
     EnvironmentContext,
     ParsedTestReport,
@@ -18,15 +24,19 @@ from vera.domain.models.test_run import (
 )
 
 __all__ = [
+    "BaselineSelection",
     "CIContext",
     "ChangeRequestContext",
     "ChangeRequestKind",
+    "ComparisonResult",
     "DetectedCIContext",
     "EnvironmentContext",
     "GitContext",
     "ParsedTestReport",
     "PipelineContext",
+    "RegressionComparison",
     "TestCaseExecution",
+    "TestComparisonFinding",
     "TestFailure",
     "TestRun",
     "TestSuite",

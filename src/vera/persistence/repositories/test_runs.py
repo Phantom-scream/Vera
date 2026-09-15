@@ -2,7 +2,8 @@
 
 from uuid import UUID
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, and_, cast, func, or_, select
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -76,6 +77,45 @@ class TestRunRepository:
         self._session.add(record)
         await self._session.flush()
         return _to_domain(record)
+
+    async def find_comparable_baseline(self, current: TestRun, branch: str) -> TestRun | None:
+        """Return the latest strictly older run matching comparison dimensions."""
+
+        environment = current.environment
+        conditions = [
+            TestRunRecord.repository == current.repository,
+            TestRunRecord.branch == branch,
+            TestRunRecord.id != current.id,
+            TestRunRecord.created_at < current.created_at,
+            TestRunRecord.started_at <= current.started_at,
+            or_(
+                TestRunRecord.provider != current.provider,
+                TestRunRecord.pipeline_id != current.pipeline_id,
+            ),
+            EnvironmentContextRecord.environment.is_(None)
+            if environment.environment is None
+            else EnvironmentContextRecord.environment == environment.environment,
+            EnvironmentContextRecord.platform.is_(None)
+            if environment.platform is None
+            else EnvironmentContextRecord.platform == environment.platform,
+            EnvironmentContextRecord.browser.is_(None)
+            if environment.browser is None
+            else EnvironmentContextRecord.browser == environment.browser,
+            EnvironmentContextRecord.device.is_(None)
+            if environment.device is None
+            else EnvironmentContextRecord.device == environment.device,
+            cast(EnvironmentContextRecord.test_configuration, JSONB)
+            == environment.test_configuration,
+        ]
+        statement = (
+            self._complete_query()
+            .join(TestRunRecord.environment)
+            .where(and_(*conditions))
+            .order_by(TestRunRecord.created_at.desc(), TestRunRecord.id.desc())
+            .limit(1)
+        )
+        record = (await self._session.scalars(statement)).unique().one_or_none()
+        return _to_domain(record) if record is not None else None
 
     @staticmethod
     def _complete_query() -> Select[tuple[TestRunRecord]]:
@@ -161,6 +201,7 @@ def _to_record(run: TestRun) -> TestRunRecord:
                     duration_seconds=case.duration_seconds,
                     status=case.status.value,
                     attempt=case.attempt,
+                    stable_test_key=case.stable_test_key,
                     failure=(
                         TestFailureRecord(
                             id=case.failure.id,
@@ -254,6 +295,7 @@ def _to_domain(record: TestRunRecord) -> TestRun:
                         duration_seconds=case.duration_seconds,
                         status=ExecutionStatus(case.status),
                         attempt=case.attempt,
+                        stable_test_key=case.stable_test_key,
                         failure=(
                             TestFailure(
                                 id=case.failure.id,

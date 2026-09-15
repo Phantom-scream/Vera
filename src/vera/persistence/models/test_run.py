@@ -158,6 +158,7 @@ class TestCaseExecutionRecord(Base):
         ),
         Index("ix_test_case_executions_test_suite_id", "test_suite_id"),
         Index("ix_test_case_executions_classname_name", "classname", "name"),
+        Index("ix_test_case_executions_stable_test_key", "stable_test_key"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -169,6 +170,7 @@ class TestCaseExecutionRecord(Base):
     duration_seconds: Mapped[float] = mapped_column(Float)
     status: Mapped[str] = mapped_column(String(20))
     attempt: Mapped[int] = mapped_column(Integer, default=1)
+    stable_test_key: Mapped[str] = mapped_column(String(67))
 
     test_suite: Mapped[TestSuiteRecord] = relationship(back_populates="test_cases")
     failure: Mapped["TestFailureRecord | None"] = relationship(

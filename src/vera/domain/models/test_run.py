@@ -9,6 +9,7 @@ from pydantic import Field, field_validator, model_validator
 from vera.domain.enums import ExecutionStatus
 from vera.domain.models.base import DomainModel
 from vera.domain.models.ci import ChangeRequestContext, CIContext, GitContext
+from vera.domain.test_identity import stable_test_key
 
 
 class TestFailure(DomainModel):
@@ -31,6 +32,7 @@ class TestCaseExecution(DomainModel):
     status: ExecutionStatus
     attempt: int = Field(default=1, ge=1)
     failure: TestFailure | None = None
+    stable_test_key: str | None = Field(default=None, pattern=r"^v[0-9]+:[0-9a-f]{64}$")
 
     @model_validator(mode="after")
     def validate_failure_consistency(self) -> Self:
@@ -63,6 +65,20 @@ class TestSuite(DomainModel):
     ) -> Self:
         """Create a suite using aggregates calculated from its test cases."""
 
+        identified_cases = tuple(
+            case.model_copy(
+                update={
+                    "stable_test_key": stable_test_key(
+                        suite_name=name,
+                        suite_package=package,
+                        classname=case.classname,
+                        test_name=case.name,
+                        file=case.file,
+                    )
+                }
+            )
+            for case in test_cases
+        )
         return cls(
             name=name,
             package=package,
@@ -74,7 +90,7 @@ class TestSuite(DomainModel):
                 for case in test_cases
             ),
             skipped_tests=sum(case.status is ExecutionStatus.SKIPPED for case in test_cases),
-            test_cases=test_cases,
+            test_cases=identified_cases,
         )
 
 
