@@ -4,7 +4,7 @@ Vera is a CI-native automated test reporting and regression intelligence platfor
 intended to run after regression jobs, normalize their results, retain execution history,
 analyze changes, and publish useful reports to engineering tools.
 
-Phase 4 adds deterministic flaky-test intelligence to CI-aware JUnit ingestion and historical
+Phase 5 adds deterministic failure fingerprinting and recurring-defect intelligence to CI-aware JUnit ingestion and historical
 comparison. Vera preserves reported test attempts, computes bounded compatible histories, and
 classifies stability without changing regression classifications. GitHub Actions and GitLab CI
 metadata detection remains token-free; optional APIs enrich metadata only. Performance analysis,
@@ -86,6 +86,16 @@ The default `flaky-v1` calculation requires evidence from ten independent pipeli
 assigns a strong stability class. It distinguishes an individual test retry from a CI job rerun,
 and keeps a `NEW_FAILURE` finding intact while adding its stability class. See
 [flaky-test analysis](docs/flaky-tests.md) and [reruns and retries](docs/reruns-and-retries.md).
+
+Inspect grouped failure evidence after ingestion:
+
+```bash
+uv run vera failures --run <run-id>
+uv run vera recurring --json
+```
+
+See [failure fingerprinting](docs/failure-fingerprinting.md) and
+[recurring defects](docs/recurring-defects.md) for normalization and recurrence rules.
 
 Run the API during development:
 

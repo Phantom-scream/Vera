@@ -91,3 +91,10 @@ The domain scoring function is pure and versioned (`flaky-v1`). Snapshot records
 policy key, score, and classification for auditability without changing raw execution history or
 persisted regression classifications. See [flaky-test analysis](flaky-tests.md) and
 [reruns and retries](reruns-and-retries.md) for the contracts.
+
+## Failure intelligence boundaries
+
+Failure normalization and `fingerprint-v1` live in the domain and never modify raw parser output.
+The application service resolves normalized fingerprints into `FailureFamily` records after a run
+is atomically inserted. API and CLI summaries expose canonical evidence and recurrence counts, not
+raw stack traces. Regression and stability classifications remain independent dimensions.
