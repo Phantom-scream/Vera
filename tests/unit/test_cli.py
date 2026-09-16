@@ -1,4 +1,5 @@
 import json
+from collections.abc import Callable
 from pathlib import Path
 from uuid import uuid4
 
@@ -29,7 +30,12 @@ def test_health_command() -> None:
     assert json.loads(result.stdout) == {"status": "ok", "version": __version__}
 
 
-def test_context_command_emits_normalized_json_without_tokens() -> None:
+def test_context_command_emits_normalized_json_without_tokens(
+    clean_ci_environment: Callable[[], None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GITLAB_CI", "true")
+    clean_ci_environment()
     get_settings.cache_clear()
     result = runner.invoke(
         app,
@@ -52,7 +58,7 @@ def test_context_command_emits_normalized_json_without_tokens() -> None:
     get_settings.cache_clear()
 
 
-def test_context_command_reports_local_mode() -> None:
+def test_context_command_reports_local_mode(clean_ci_environment: Callable[[], None]) -> None:
     get_settings.cache_clear()
     result = runner.invoke(app, ["context", "--json"], env={"VERA_CI_PROVIDER_OVERRIDE": "local"})
 

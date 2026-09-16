@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,9 @@ FIXTURES = Path(__file__).parents[1] / "fixtures" / "junit"
 
 
 def test_cli_ingests_and_reports_idempotent_repeat(
-    migrated_database_url: str, monkeypatch: pytest.MonkeyPatch
+    migrated_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    clean_ci_environment: Callable[[], None],
 ) -> None:
     monkeypatch.setenv("VERA_DATABASE_URL", migrated_database_url)
     get_settings.cache_clear()
@@ -48,8 +51,14 @@ def test_cli_ingests_and_reports_idempotent_repeat(
 
 
 def test_cli_auto_detects_gitlab_context(
-    migrated_database_url: str, monkeypatch: pytest.MonkeyPatch
+    migrated_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    clean_ci_environment: Callable[[], None],
 ) -> None:
+    # Simulate a GitHub Actions parent, then build an isolated GitLab child.
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", "/untrusted/runner-event.json")
+    clean_ci_environment()
     variables = {
         "VERA_DATABASE_URL": migrated_database_url,
         "GITLAB_CI": "true",

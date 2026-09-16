@@ -1,4 +1,5 @@
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -137,6 +138,16 @@ def test_conflicting_provider_markers_are_rejected() -> None:
     environment = gitlab_environment() | {"GITHUB_ACTIONS": "true"}
     with pytest.raises(CIContextError, match="Conflicting"):
         CIProviderDetector().detect(environment)
+
+
+def test_clean_baseline_ignores_parent_ci_markers(
+    monkeypatch: pytest.MonkeyPatch, clean_ci_environment: Callable[[], None]
+) -> None:
+    """A simulated local run remains local even when pytest starts in CI."""
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITLAB_CI", "true")
+    clean_ci_environment()
+    assert CIProviderDetector().detect() is None
 
 
 def test_invalid_github_event_and_missing_identity_are_rejected(tmp_path: Path) -> None:
